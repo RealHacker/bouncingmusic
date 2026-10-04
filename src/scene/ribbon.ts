@@ -14,19 +14,37 @@ const POOL = 8;
 /** How far behind the playhead the paper should still be drawn. */
 const VIEW_BACK = 22;
 
+interface Slot {
+  mesh: THREE.Mesh;
+  canvas: HTMLCanvasElement;
+  texture: THREE.CanvasTexture;
+  assigned: number;
+  /** Score generation this slot's texture was engraved for. */
+  gen: number;
+  metrics: EngraveMetrics | null;
+  /** Score-space x of this system's centre; the mesh is placed at `centreX - scroll`. */
+  centreX: number;
+  /**
+   * Pixel size of the GPU texture last allocated for this slot.
+   * Kept in sync with the canvas; a mismatch is the "notes shift, orbs don't" bug.
+   */
+  gpuW: number;
+  gpuH: number;
+}
+
+function makeSheetTexture(canvas: HTMLCanvasElement): THREE.CanvasTexture {
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = 8;
+  return texture;
+}
+
 export class Ribbon {
   readonly group = new THREE.Group();
-  private slots: {
-    mesh: THREE.Mesh;
-    canvas: HTMLCanvasElement;
-    texture: THREE.CanvasTexture;
-    assigned: number;
-    /** Score generation this slot's texture was engraved for. */
-    gen: number;
-    metrics: EngraveMetrics | null;
-    /** Score-space x of this system's centre; the mesh is placed at `centreX - scroll`. */
-    centreX: number;
-  }[] = [];
+  private slots: Slot[] = [];
   private layout: ScoreLayout | null = null;
   private opts: EngraveOptions;
   /** Bumped whenever the layout changes; a slot from an older one is stale. */
@@ -39,12 +57,7 @@ export class Ribbon {
       const canvas = document.createElement('canvas');
       canvas.width = 8;
       canvas.height = 8;
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = true;
-      texture.anisotropy = 8;
+      const texture = makeSheetTexture(canvas);
       // Unlit on purpose. The engraving texture *is* the look; letting a
       // Standard material's light angle decide how bright the staff lines are
       // made the whole sheet depend on the camera azimuth. Any sheen or
@@ -54,7 +67,19 @@ export class Ribbon {
       const mesh = new THREE.Mesh(geo, material);
       mesh.visible = false;
       mesh.frustumCulled = false;
-      this.slots.push({ mesh, canvas, texture, assigned: -1, gen: -1, metrics: null, centreX: 0 });
+      this.slots.push({
+        mesh,
+        canvas,
+        texture,
+        assigned: -1,
+        gen: -1,
+        metrics: null,
+        centreX: 0,
+        // Not yet uploaded at this size. The dummy 8×8 canvas must never become
+        // the immutable GPU allocation (see rebindTexture).
+        gpuW: 0,
+        gpuH: 0,
+      });
       this.group.add(mesh);
     }
   }
@@ -102,7 +127,7 @@ export class Ribbon {
       if (slot.assigned !== idx || slot.gen !== this.generation) {
         const sys = systems[idx];
         const m = drawSystem(slot.canvas, layout, sys, this.opts);
-        slot.texture.needsUpdate = true;
+        this.rebindTexture(slot);
         slot.metrics = m;
         slot.mesh.scale.set(m.widthUnits, m.heightUnits, 1);
         slot.centreX = sys.x0 + (sys.x1 - sys.x0) / 2;
@@ -117,6 +142,35 @@ export class Ribbon {
       slot.mesh.position.x = slot.centreX - scroll;
       slot.mesh.visible = true;
     }
+  }
+
+  /**
+   * Three.js r169 allocates canvas textures with `texStorage2D`, which freezes
+   * the GPU texture at the first uploaded width×height. `needsUpdate` after a
+   * canvas resize then `texSubImage2D`s into that immutable store: a wider
+   * system is clipped (or the upload fails and the previous system stays up),
+   * a narrower one is drawn in the corner of the old texture and stretched
+   * across the new plane. The CPU canvas is correct either way, so a
+   * pixel-compare against a fresh `drawSystem` cannot see it — the orbs keep
+   * landing on the right `x` while the notes on screen belong to another
+   * system. Recreating the texture forces a new allocation at the current size.
+   */
+  private rebindTexture(slot: Slot) {
+    const w = slot.canvas.width;
+    const h = slot.canvas.height;
+    if (slot.gpuW === w && slot.gpuH === h) {
+      slot.texture.needsUpdate = true;
+      return;
+    }
+    const next = makeSheetTexture(slot.canvas);
+    const material = slot.mesh.material as THREE.MeshBasicMaterial;
+    const prev = slot.texture;
+    slot.texture = next;
+    material.map = next;
+    material.needsUpdate = true;
+    prev.dispose();
+    slot.gpuW = w;
+    slot.gpuH = h;
   }
 
   dispose() {

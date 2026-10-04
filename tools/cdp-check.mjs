@@ -19,11 +19,17 @@ import os from 'node:os';
 import path from 'node:path';
 
 const EDGE_CANDIDATES = [
+  process.env.CHROME_PATH,
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-];
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/local/bin/google-chrome',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+].filter(Boolean);
 
 const argv = process.argv.slice(2);
 const arg = (name, dflt) => {
@@ -533,6 +539,46 @@ async function main() {
         // away needs a real fix rather than a threshold change.
         warn.push(extra + ' of ' + total + ' events share an onset with another');
       }
+
+      // Systems have different pixel widths (they break on a barline, not at a
+      // fixed span). Three.js freezes a canvas texture at the first uploaded
+      // size, so a later system drawn into a resized canvas keeps the previous
+      // system's notes on the GPU. The orbs still follow the event list, which
+      // is the user report: orbs move, the sheet looks shifted. Drive the
+      // ribbon past the first width change and require every visible plane's
+      // allocated GPU size to match its canvas.
+      const rib = window.app.world.ribbon;
+      const pad = rib.opts.padding;
+      const PX = L.options.pxPerUnit;
+      const canvasW = (s) => Math.round((s.x1 - s.x0 + (2 * pad) / PX) * PX);
+      const w0 = L.systems.length ? canvasW(L.systems[0]) : 0;
+      const other = L.systems.find((s) => canvasW(s) !== w0);
+      let gpuChecked = 0, gpuMismatch = 0, gpuAt = null;
+      if (other) {
+        const targetX = (other.x0 + other.x1) / 2;
+        const dur = window.app.model.durationSec;
+        let loT = 0, hiT = dur;
+        for (let i = 0; i < 40; i++) {
+          const mid = (loT + hiT) / 2;
+          if (L.secToX(mid) < targetX) loT = mid;
+          else hiT = mid;
+        }
+        const tOther = (loT + hiT) / 2;
+        window.app.world.renderFrame(0);
+        window.app.world.renderFrame(tOther);
+        gpuAt = { sys: other.index, t: +tOther.toFixed(2), w0, w: canvasW(other) };
+        for (const s of rib.slots) {
+          if (!s.mesh.visible) continue;
+          gpuChecked++;
+          if (s.gpuW !== s.canvas.width || s.gpuH !== s.canvas.height) gpuMismatch++;
+        }
+        if (!gpuChecked) fail.push('no ribbon planes visible after a system-width change');
+        if (gpuMismatch) {
+          fail.push(gpuMismatch + ' of ' + gpuChecked +
+            ' planes kept a GPU texture from a different canvas size (sys ' +
+            other.index + ' at t=' + tOther.toFixed(1) + 's)');
+        }
+      }
       const detail = L.lanes.map((lane) => {
         let lo = Infinity, hi = -Infinity, loN = null, hiN = null;
         const clefs = new Set();
@@ -573,14 +619,16 @@ async function main() {
           loPitch: loN ? loN.pitches[0].step + loN.pitches[0].octave : '-',
         };
       });
-      return { fail, warn, lanes: L.lanes.length, top, bot, height: L.height, oob, collide, mismatched, checked, detail, coverage, framing: worst, pairs, inverted, extra, total };
+      return { fail, warn, lanes: L.lanes.length, top, bot, height: L.height, oob, collide, mismatched, checked, detail, coverage, framing: worst, pairs, inverted, extra, total, gpuChecked, gpuMismatch, gpuAt };
     })()`);
     console.log(
       `geometry: ${geo.lanes} lane(s), sheet y ${geo.bot.toFixed(2)}..${geo.top.toFixed(2)} ` +
         `(h ${geo.height.toFixed(2)}), off-sheet ${geo.oob}, overlaps ${geo.collide}, ` +
         `orb/head mismatch ${geo.mismatched}/${geo.checked}, on-staff ${Math.round(geo.coverage * 100)}%` +
         `, sheet in frame (worst edge NDC ${geo.framing.toFixed(2)})` +
-        `, pitch ok ${geo.pairs - geo.inverted}/${geo.pairs}, shared onsets ${geo.extra}/${geo.total}`,
+        `, pitch ok ${geo.pairs - geo.inverted}/${geo.pairs}, shared onsets ${geo.extra}/${geo.total}` +
+        `, gpu tex ${geo.gpuMismatch}/${geo.gpuChecked} stale` +
+        (geo.gpuAt ? ` @sys${geo.gpuAt.sys} t=${geo.gpuAt.t}s ${geo.gpuAt.w0}→${geo.gpuAt.w}px` : ''),
     );
     for (const d of geo.detail) {
       const fits = Object.entries(d.fits).map(([k, v]) => `${k}:${v}`).join(' ');
