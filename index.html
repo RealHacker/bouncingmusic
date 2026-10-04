@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bouncing Music — glowing orbs on an infinite music sheet</title>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="view"></canvas>
+      <div id="hud">
+        <div id="nowplaying">
+          <span id="np-title">No score loaded</span>
+          <span id="np-sub">Load a MusicXML file or paste a URL to begin</span>
+        </div>
+        <div id="scrubwrap" hidden>
+          <input id="scrub" type="range" min="0" max="1000" value="0" step="1" />
+          <div id="times"><span id="t-now">0:00</span><span id="t-end">0:00</span></div>
+        </div>
+        <div id="transport" hidden>
+          <button id="btn-play" class="primary" title="Space">▶ Play</button>
+          <button id="btn-stop" title="Back to start">■ Stop</button>
+          <label class="chk"><input id="chk-loop" type="checkbox" checked /> Loop</label>
+        </div>
+      </div>
+      <div id="progress-overlay" hidden><div class="spin"></div><span id="progress-text">Working…</span></div>
+    </div>
+
+    <aside id="panel">
+      <header>
+        <h1>Bouncing Music</h1>
+        <p>Glowing orbs travelling an endless engraved score. Drop in any <b>MusicXML</b> file.</p>
+      </header>
+
+      <details class="card" id="card-source" open>
+        <summary><h2>1 &middot; Source</h2></summary>
+        <div class="row">
+          <input id="url" type="url" placeholder="https://…/score.mxl  or  .xml" spellcheck="false" />
+          <button id="btn-load-url">Load</button>
+        </div>
+        <div id="dropzone">Drop <b>.mxl</b> / <b>.xml</b> here, or <label class="link">browse<input id="file" type="file" accept=".mxl,.xml,.musicxml,application/xml,text/xml" hidden /></label></div>
+        <div class="samples-label">Samples</div>
+        <div id="samples" class="chips"></div>
+      </details>
+
+      <details class="card" id="card-report" hidden>
+        <summary><h2>2 &middot; Parsed score</h2></summary>
+        <div id="report" class="report"></div>
+      </details>
+
+      <details class="card" id="card-tracks" hidden>
+        <summary><h2>3 &middot; Tracks <span id="tracks-hint" class="hint"></span></h2></summary>
+        <div id="tracks" class="tracks"></div>
+        <div class="row small">
+          <button id="btn-all">All</button><button id="btn-none">None</button>
+        </div>
+      </details>
+
+      <details class="card" id="card-excerpt" hidden>
+        <summary><h2>4 &middot; Excerpt</h2></summary>
+        <div class="field">
+          <label for="ex-start">Start</label>
+          <input id="ex-start" type="range" min="0" max="100" value="0" step="1" />
+          <output id="ex-start-o"></output>
+        </div>
+        <div class="field">
+          <label for="ex-len">Length</label>
+          <input id="ex-len" type="range" min="5" max="600" value="45" step="5" />
+          <output id="ex-len-o"></output>
+        </div>
+        <div class="field">
+          <label for="ex-tempo">Tempo</label>
+          <input id="ex-tempo" type="range" min="40" max="160" value="100" step="1" />
+          <output id="ex-tempo-o"></output>
+        </div>
+      </details>
+
+      <details class="card" id="card-export" hidden>
+        <summary><h2>5 &middot; Export video</h2></summary>
+        <div class="row small">
+          <select id="ex-res">
+            <option value="1920x1080">1920 × 1080</option>
+            <option value="1280x720">1280 × 720</option>
+            <option value="1080x1920">1080 × 1920 (vertical)</option>
+            <option value="2560x1440">2560 × 1440</option>
+          </select>
+          <select id="ex-fps"><option value="30">30 fps</option><option value="60">60 fps</option></select>
+        </div>
+        <div class="field">
+          <label for="ex-range">Range</label>
+          <select id="ex-range"><option value="excerpt">Current excerpt</option><option value="full">Whole piece</option></select>
+        </div>
+        <button id="btn-export" class="primary wide">Export MP4</button>
+        <div id="ex-bar" hidden><div id="ex-fill"></div><span id="ex-text"></span></div>
+        <button id="btn-wav" class="wide">Download audio (WAV)</button>
+      </details>
+
+      <details class="card" id="card-look" hidden>
+        <summary><h2>6 &middot; Look</h2></summary>
+        <div class="field"><label for="lk-bloom">Glow</label><input id="lk-bloom" type="range" min="0" max="200" value="100" /><output id="lk-bloom-o"></output></div>
+        <div class="field"><label for="lk-orb">Orb size</label><input id="lk-orb" type="range" min="40" max="220" value="100" /><output id="lk-orb-o"></output></div>
+        <div class="field"><label for="lk-trail">Trail</label><input id="lk-trail" type="range" min="0" max="16" value="7" /><output id="lk-trail-o"></output></div>
+        <div class="field"><label for="lk-lanes">Lane gap</label><input id="lk-lanes" type="range" min="60" max="260" value="100" /><output id="lk-lanes-o"></output></div>
+        <div class="field"><label for="lk-cam">Camera</label><input id="lk-cam" type="range" min="0" max="100" value="45" /><output id="lk-cam-o"></output></div>
+        <p class="note">Drag on the score to orbit · wheel to zoom</p>
+      </details>
+
+      <footer>
+        <a href="https://musetrainer.github.io/library/" target="_blank" rel="noreferrer">Sample scores from the musetrainer public-domain library</a>
+      </footer>
+    </aside>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

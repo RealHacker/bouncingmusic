@@ -1,0 +1,23 @@
+{
+  "name": "bouncingmusic",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Glowing orbs bouncing along an infinite music sheet, driven by MusicXML.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "mediabunny": "^1.61.1",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.169.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
