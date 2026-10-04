@@ -150,6 +150,19 @@ That keeps the look consistent at every window shape and makes the exported
 frame identical to the preview. Fog density is tied to the camera distance for
 the same reason, so the haze at the playhead is the same at any aspect ratio.
 
+**A recycled system must get a new GPU texture when its canvas changes size.**
+Systems break on a barline, so they are not all the same width. Three.js
+allocates a canvas texture with `texStorage2D`, which freezes the GPU store at
+the first uploaded size; a later `needsUpdate` after `canvas.width = …` writes
+into that immutable store. The CPU canvas is then correct — a fresh
+`drawSystem` compares pixel-identical — but the plane still shows the previous
+system, stretched or clipped. The orbs keep following the event list, so they
+look like they have left the notes. That is the flicker at the first recycle
+(~0:20 on Für Elise and Greensleeves) and the diverge / converge at Canon
+system-width changes (1:17, 2:22, 2:50). The ribbon recreates the texture on
+resize, and the checker drives past the first width change and fails if any
+visible plane kept the old allocation.
+
 **The camera aims at the score, not at the origin.** Lanes stack downward from
 the top staff, so a four-voice piece is engraved tens of units below `y = 0`.
 The camera picks its distance from the engraved height but points at the middle
@@ -209,6 +222,9 @@ It also checks the engraving geometry, which is where the subtle bugs hide:
   exactly — this is what catches two code paths disagreeing about where a staff
   step sits
 - no lane reads worse under its resolved clef than a plain single clef would
+- after the ribbon has shown a system whose canvas is a different pixel size
+  than system 0, every visible plane's allocated GPU texture matches its canvas
+  (a stale allocation keeps the previous system's notes on screen)
 
 Clef quality is checked *relatively* rather than as an absolute "share of notes
 near the staff". A piece can legitimately play far above or below its staff — the
@@ -257,7 +273,11 @@ flicker report that is *temporal* rather than positional: `--diag` samples the
 time→x map at 4000 points for steps (a jump reads as "the sheet suddenly
 shifted"), and during live playback it samples scroll at ~60 Hz and reports the
 median and worst step, which is what catches an audio clock that stutters under
-load. A single-frame render cannot see either.
+load. A single-frame render cannot see either. The note/orb desync at system
+breaks was the other kind of invisible bug: the canvas pixels were right and
+the orbs sat on the layout `x`, but the GPU texture had been allocated at the
+previous system's size. The checker now forces a width change and reads the
+slot's allocated size.
 
 ## Browser support
 
