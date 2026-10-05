@@ -143,6 +143,19 @@ function fitScore(notes: NoteEvent[], pick: (e: NoteEvent) => number): number {
 }
 
 /**
+ * Standard clefs, as the diatonic index of their bottom staff line.
+ * Only ever used to rescue a part whose declared clef reads badly.
+ */
+const STANDARD_CLEFS = [30, 18, 24]; // G2 (E4), F4 (G2), C3 (F3)
+
+/**
+ * How much better a standard clef must read than every clef the file declared
+ * before we override the file. Wide, because overriding a correct clef is worse
+ * than tolerating a mediocre one.
+ */
+const CLEF_RESCUE_MARGIN = 0.25;
+
+/**
  * Decide which clef a track is really written in, as a function of beat.
  *
  * Well-formed files change clef where the music needs it. Converted ones often
@@ -172,10 +185,31 @@ function resolveTrackClef(track: Track): { clefAt: (beat: number) => number; fit
     }
   }
 
+  // A file can also get the clef simply *wrong* rather than flappy. The Entertainer
+  // in this library declares a treble clef for its left hand, putting that part
+  // nineteen ledger lines below the staff. The declared set can never fix that,
+  // because the wrong clef is the only one on offer — so try the standard clefs
+  // too, and let one of those win only if it reads decisively better. The margin
+  // is wide on purpose: a correct clef should never be overturned by a hunch.
+  let rescue = -1;
+  let rescueFit = -1;
+  for (const c of STANDARD_CLEFS) {
+    if (candidates.has(c)) continue;
+    const f = fitScore(notes, () => c);
+    if (f > rescueFit) {
+      rescueFit = f;
+      rescue = c;
+    }
+  }
+  const rescued = rescue > 0 && rescueFit > bestFit + CLEF_RESCUE_MARGIN;
+
   // Honour the declared changes only when they read well in absolute terms and
   // beat the best single clef. A part that genuinely changes clef keeps both
   // clefs placing its notes near the staff, so it scores high and is kept.
-  const useSingle = timelineFit < 0.75 && bestFit > timelineFit + 0.05;
+  const useSingle = rescued || (timelineFit < 0.75 && bestFit > timelineFit + 0.05);
+  if (rescued) {
+    return { clefAt: () => rescue, fit: rescueFit };
+  }
   return useSingle
     ? { clefAt: () => best, fit: bestFit }
     : { clefAt: viaTimeline, fit: timelineFit };

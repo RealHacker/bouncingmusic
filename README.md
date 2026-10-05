@@ -191,6 +191,14 @@ beats the best single clef by a real margin; otherwise the lane settles on one
 clef and the report panel says so. The clef glyph is drawn at the beat where it
 changes, not smeared over the lane.
 
+That comparison only rescues a *timeline*; a part whose declared clef is simply
+wrong cannot be rescued by it, because no other declared clef ever loses. So a
+standard clef (treble, bass, alto) also gets to compete, and it wins only by a
+wide margin — 0.25 of fit — because overriding a correct clef is worse than
+tolerating a mediocre one. This is what rescues the second part of *The
+Entertainer* (declared treble, actually alto: 33% → 59% of notes on staff) and
+the upper lane of *Swan Lake* (25% → 71%).
+
 **The audio is rendered in chunks.** A four-minute piece is thousands of notes;
 building that many nodes in one `OfflineAudioContext` is slow enough to look like
 a hang. Chunking lets the UI report progress and keeps the page responsive.
@@ -257,14 +265,17 @@ so they are called out in the Parsed score panel instead of rendering silently:
   voices span E1–A5, so even the best-fitting clef places only ~40–57% of notes
   near the staff.
 
+The first two are no longer chips — they are still reachable by URL, which is
+the quickest way to confirm the caveats above are still accurate.
+
 ```bash
 npm run dev                                   # in one terminal
 node tools/cdp-check.mjs                      # in another
 node tools/cdp-check.mjs --url <other.mxl> --export-seconds 10
 ```
 
-Ten scores from the sample library pass all checks, from two-voice Canon in D to
-four-voice Clair de Lune. `--switch <url>` loads a second piece on top of the
+All fourteen sample chips pass all checks, from two-voice Ode to Joy to four-voice
+Arabesque No. 1. `--switch <url>` loads a second piece on top of the
 first — mid-playback, deliberately — and re-engraves every visible plane from the
 new layout to compare pixel-for-pixel, which is how the transport bug above was
 caught. `--diag` dumps per-lane track counts, clef fits, orb residuals, pitch

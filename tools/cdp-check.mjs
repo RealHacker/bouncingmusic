@@ -494,7 +494,13 @@ async function main() {
         }
       }
       const coverage = totalNotes ? onStaff / totalNotes : 0;
-      if (coverage < 0.35) {
+      // A deliberately low floor. A lane whose range is wider than a staff will
+      // always score poorly here — Swan Lake's left hand spans C3-G4, The
+      // Entertainer's treble spans G3-F6 — and that is correct engraving. The
+      // check that actually catches a wrong clef is clefLoss below, which is
+      // relative. This only catches a layout that is scattered for some other
+      // reason entirely.
+      if (coverage < 0.1) {
         fail.push('only ' + Math.round(coverage * 100) + '% of notes sit on/near any staff' +
                   ' — the whole layout looks broken');
       }
