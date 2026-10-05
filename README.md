@@ -18,7 +18,7 @@ the result as a video.
 3. **Engraves it** — staff lines, clefs, key and time signatures, note heads,
    stems, beams, ledger lines, barlines, dynamics and hairpins, drawn on canvas.
 4. **Synthesizes the audio** with a small built-in synth (16 instrument
-   families) in an `OfflineAudioContext`, shaped by the score's dynamics.
+   families) in an `OfflineAudioContext`, at a steady level.
 5. **Animates it** — each voice gets a lane and a comet-like orb that hops from
    note to note, lighting the staff as it lands, over a sheet that scrolls
    endlessly into fog.
@@ -92,7 +92,7 @@ src/
     ingest.ts    fetch / file -> raw MusicXML text (unzips .mxl)
     parse.ts     MusicXML DOM -> ScoreModel (the event list)
     layout.ts    score time -> x, lanes, system breaking
-    dynamics.ts  the shared dynamic curve (audio velocity + orb brightness)
+    dynamics.ts  the shared dynamic curve (orb brightness; see "flat mix" below)
     types.ts     the data model
   scene/
     engrave.ts   Canvas-2D engraver — notation becomes pixels
@@ -202,6 +202,44 @@ the upper lane of *Swan Lake* (25% → 71%).
 **The audio is rendered in chunks.** A four-minute piece is thousands of notes;
 building that many nodes in one `OfflineAudioContext` is slow enough to look like
 a hang. Chunking lets the UI report progress and keeps the page responsive.
+
+**The mix is deliberately flat.** Notated dynamics are parsed, drawn on the sheet,
+and drive the *orbs'* brightness — but they do not touch note velocity. Every note
+is struck at one fixed level. This was the source of a real complaint: the library
+scores carry `pp`/`ppp` marks and `<diminuendo>` hairpins, and `DYNAMIC_VALUE`
+spans 0.06 (`pppppp`) to 1.0, so a lane marked `pp` sat at half the level of one
+marked `mp` before any hairpin even started. The hairpin was worse — the wedge
+curve bottoms out at its 0.05 clamp and then *holds* there until the next dynamic
+mark, which can be a whole system away, dropping one voice an order of magnitude
+below its neighbours for several bars. A source file's idea of "soft" is not a mix
+decision, and reading one is what made a track seem to fade out on its own.
+
+Measured before/after on the same four pieces, over 250 ms RMS windows of the
+rendered take. "Median" is the level the piece sits at; "worst loud window" is the
+quietest window still above the 35%-of-median line, i.e. how far down the mix can
+sag before it reads as a dropout.
+
+| Piece | median RMS | worst loud window | peak |
+|---|---|---|---|
+| Für Elise | 0.152 → **0.201** | 0.062 → **0.085** | 0.60 → 0.71 |
+| Greensleeves | 0.164 → **0.192** | 0.061 → **0.075** | 0.80 → 0.75 |
+| Swan Lake | 0.258 → 0.222 | 0.102 → **0.124** | 0.71 → 0.61 |
+| Happy Birthday | 0.268 → 0.207 | 0.138 → 0.095 | **0.98 → 0.89** |
+
+The spread between the loudest and quietest of these four pieces' median levels
+narrows from 1.76× to 1.16× — that is "steady" in one number. The worst-case
+window across all four rises 25% (0.061 → 0.075), and the worst peak gains
+headroom. Happy Birthday is the one that loses: it is marked `fff` and used to be
+played at 1.0 velocity. That is the intended cost of a flat mix, and the limiter
+keeps it well inside full scale either way.
+
+One thing this does *not* fix, and is worth being straight about: a whole-mix
+window is a weak proxy for the per-lane bug, because a piece's quiet windows are
+mostly rests. Für Elise's quiet share went 22.2% → 5.6%, but Swan Lake's only went
+19.2% → 18.5% — its quiet windows are rests, not dynamics. Measuring a lane in
+isolation means re-rendering the score once per track, which is too slow to sit in
+the routine harness pass, so this fix is **not** currently guarded by an automated
+regression check. It rests on the constant in `STEADY_VELOCITY` being a constant.
 
 **No SoundFont.** The synth is `PeriodicWave` + ADSR per instrument family. It
 is deterministic, needs no download, and is shared between offline rendering and

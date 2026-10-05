@@ -6,10 +6,9 @@
  * time from the moment its orb lands on it.
  */
 
-import type { ScoreModel, Track } from '../core/types';
+import type { Track } from '../core/types';
 import { midiToFreq, instrumentFor, type InstrumentSpec } from './instruments';
-import { dynamicCurve } from '../core/dynamics';
-import { makeBeatToSec } from '../core/parse';
+import { defaultDynamic } from '../core/dynamics';
 import type { ScoreLayout } from '../core/layout';
 
 export interface RenderOptions {
@@ -30,6 +29,22 @@ export const DEFAULT_RENDER: RenderOptions = {
   // rather than clipping them.
   masterGain: 0.62,
 };
+
+/**
+ * Every note is struck at one fixed velocity, and the notated dynamics are
+ * deliberately not read.
+ *
+ * They used to be, and that is where "sometimes one track goes quiet" came from.
+ * `DYNAMIC_VALUE` runs from `pppppp` (0.06) to `fffff` (1.0), so a lane marked
+ * `pp` was already half the level of one marked `mp` — before any hairpin. A
+ * `<diminuendo>` was worse: the wedge curve bottoms out at its 0.05 clamp and
+ * then *holds* there until the next dynamic mark, which can be a whole system
+ * away, so a lane could sit an order of magnitude below its neighbours.
+ *
+ * The orbs still brighten and dim with the marks (`dynamicCurve` in the scene);
+ * only the mix is flat.
+ */
+const STEADY_VELOCITY = defaultDynamic;
 
 const waveCache = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>();
 
@@ -124,7 +139,6 @@ export interface RenderProgress {
  * lets the browser keep painting between chunks.
  */
 export async function renderScore(
-  model: ScoreModel,
   layout: ScoreLayout,
   tracks: Track[],
   window_: { startSec: number; endSec: number },
@@ -140,12 +154,13 @@ export async function renderScore(
   const outL = out.getChannelData(0);
   const outR = out.getChannelData(1);
 
-  const beatToSec = makeBeatToSec(model.tempoMap);
   const laneIndex = new Map<string, number>();
   layout.lanes.forEach((l, i) => laneIndex.set(l.track.id, i));
   const laneCount = Math.max(1, layout.lanes.length);
 
   // Pre-flatten the note list once so each chunk only scans what it needs.
+  // No `vel` field: velocity is fixed for the whole take (see STEADY_VELOCITY),
+  // so carrying it per note would only suggest it varies.
   interface Scheduled {
     trackId: string;
     spec: InstrumentSpec;
@@ -153,7 +168,6 @@ export async function renderScore(
     onset: number;
     dur: number;
     midi: number;
-    vel: number;
     seed: number;
   }
   const plan: Scheduled[] = [];
@@ -161,7 +175,6 @@ export async function renderScore(
     const spec = instrumentFor(track);
     const idx = laneIndex.get(track.id) ?? 0;
     const pan = laneCount <= 1 ? 0 : (idx / (laneCount - 1)) * 1.3 - 0.65;
-    const vel = dynamicCurve(model, track.id, beatToSec);
     for (const ev of track.events) {
       if (ev.rest || ev.grace || !ev.pitches.length) continue;
       const onset = (ev.onsetSec - window_.startSec) / rate;
@@ -175,7 +188,7 @@ export async function renderScore(
         for (const ch of `${track.id}|${ev.onsetSec}|${midi}`) {
           h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
         }
-        plan.push({ trackId: track.id, spec, pan, onset, dur: d, midi, vel: vel(ev.onsetSec), seed: h >>> 0 });
+        plan.push({ trackId: track.id, spec, pan, onset, dur: d, midi, seed: h >>> 0 });
       }
     }
   }
@@ -208,7 +221,7 @@ export async function renderScore(
         b = makeBus(ctx, s.pan, laneCount, s.spec, from, to, master);
         buses.set(s.trackId, b);
       }
-      playNote(ctx, b.bus, s.spec, midiToFreq(s.midi), s.onset - from, Math.max(0.03, s.dur), s.vel, s.seed, b.vibrato);
+      playNote(ctx, b.bus, s.spec, midiToFreq(s.midi), s.onset - from, Math.max(0.03, s.dur), STEADY_VELOCITY, s.seed, b.vibrato);
     }
 
     const rendered = await ctx.startRendering();

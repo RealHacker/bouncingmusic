@@ -352,7 +352,6 @@ export class App {
     const end = this.excerpt.end;
     try {
       const buf = await renderScore(
-        m,
         this.layout!,
         tracks,
         { startSec: start, endSec: end },
@@ -539,7 +538,6 @@ export class App {
         fill.style.width = '2%';
         text.textContent = 'Rendering audio…';
         audio = await renderScore(
-          this.model,
           this.layout,
           this.activeTracks(),
           { startSec: start, endSec: end },
